@@ -1,0 +1,7 @@
+name = "steam-guard-link-worker"
+main = "worker.js"
+compatibility_date = "2026-05-03"
+workers_dev = true
+
+[observability]
+enabled = true
