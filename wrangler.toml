@@ -1,0 +1,20 @@
+name = "steam-guard-link-worker"
+main = "worker.js"
+compatibility_date = "2026-05-03"
+workers_dev = true
+
+[observability]
+enabled = true
+
+# Optional D1 database mode. It stores only link id, payload hash, and expiry time.
+# Create with: npx wrangler d1 create steam-guard-link-worker
+# [[d1_databases]]
+# binding = "LINK_DB"
+# database_name = "steam-guard-link-worker"
+# database_id = "replace-with-your-d1-database-id"
+
+# Optional KV mode. It stores only link id, payload hash, and expiry time.
+# Create with: npx wrangler kv namespace create LINK_KV
+# [[kv_namespaces]]
+# binding = "LINK_KV"
+# id = "replace-with-your-kv-namespace-id"

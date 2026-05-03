@@ -1,0 +1,18 @@
+# Copy to .dev.vars for local wrangler dev.
+# Never commit real secrets.
+#
+# Optional. If set, visitors must log in before opening the app.
+ACCESS_PASSWORD=""
+SESSION_SECRET=""
+
+# Optional. Default is 30. Set to 0 for permanent links.
+LINK_TTL_MINUTES="30"
+
+# Optional D1 binding for stronger server-side expiry/revocation.
+# Configure in wrangler.toml or Cloudflare dashboard as binding name LINK_DB.
+#
+# Optional KV binding for lightweight server-side expiry/revocation.
+# Configure in wrangler.toml or Cloudflare dashboard as binding name LINK_KV.
+
+# Optional. If empty, the app uses the default pink background.
+BACKGROUND_IMAGE_URL=""
