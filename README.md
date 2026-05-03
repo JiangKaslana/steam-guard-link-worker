@@ -1,1 +1,0 @@
-# steam-guard-link-worker
