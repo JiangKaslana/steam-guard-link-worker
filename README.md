@@ -2,342 +2,131 @@
 
 一个可以部署到 Cloudflare Workers 的 Steam Guard 分享链接生成器。
 
-访问者在首页粘贴 Steam Guard 密钥、maFile JSON、Base32 密钥、Base64 `shared_secret`，或者 `otpauth://totp/Steam:...` 链接。页面会在浏览器本地生成一个分享链接：
+访问者在首页粘贴 Steam Guard 密钥、maFile JSON、Base32 密钥、Base64 `shared_secret`，或者 `otpauth://totp/Steam:...` 链接。页面会在浏览器本地加密生成一个分享链接：
 
 ```text
 https://你的域名/id.密文#解密钥
-```
-
 其他人打开完整链接后，页面会把加密文本和解密钥提交给 Worker。Worker 临时解密并计算 Steam Guard 5 位验证码，只把验证码返回给浏览器。
 
-## 重点
+✨ 主要功能
+端到端加密分享：前端使用随机 AES‑GCM 密钥加密 Steam 令牌数据；解密密钥只存在于 URL 的 # 片段中，浏览器不会将其发送至服务器。
 
-- 默认不需要数据库，也可以可选绑定 KV 或 D1 做更强的过期/撤销校验。
-- 不需要 `LINK_SECRET`。
-- 不需要把 Steam 密钥放到 Cloudflare 环境变量或机密里。
-- Worker 不存储 Steam 密钥。
-- 访问者浏览器不会拿到明文 Steam 密钥。
-- Worker 作为临时解密和验证码生成工具，只返回当前验证码。
-- 支持可选访问密码。
-- 支持链接自动过期，默认 30 分钟。
-- 支持通过环境变量设置背景图片。
-- 默认是粉色背景
-- 强烈建议使用Cloudflare Worker部署
+可选链接密码：可为单个链接设置独立密码，访问者必须输入正确密码才能查看动态验证码。
 
-## 安全模型
+自定义有效期：生成链接时可单独指定有效期（分钟），设为 0 永久有效，留空则使用全局默认值。
 
-这个版本是“前端生成加密链接，Worker 临时解密生成验证码”的模型：
+二维码展示：生成链接后自动显示二维码，方便移动端扫码访问。
 
-- `/id.密文` 里，`id` 是链接格式标记，`密文` 是加密后的 Steam 密钥数据。
-- `#解密钥` 是解密钥。浏览器正常请求页面时不会把 `#` 后面的内容发给服务器。
-- 为了生成验证码，页面会把 `/密文` 和 `#解密钥` 通过 `POST /api/token` 发给 Worker。
-- Worker 在请求期间临时解密 Steam 密钥，生成 Steam Guard 5 位验证码，然后只返回验证码。
-- Worker 不会把明文 Steam 密钥返回给浏览器，也不会持久化保存。
-- 默认过期时间是 30 分钟。无数据库模式下，过期时间写在加密内容里，Worker 解密后检查 `expiresAt`。
-- 可选 KV/D1 模式下，Worker 还会在后端状态里校验链接 ID、密文哈希和过期时间；后端状态不保存 Steam 密钥，也不保存 `#解密钥`。
-- 拿到完整链接的人可以查看验证码。
-- 只拿到 `/密文`、没有 `#解密钥` 的人无法生成验证码。
+服务端二次封装（可选）：配置 LINK_SECRET 后，服务端会在客户端加密之上再加一层 AES‑GCM 封装，进一步提高安全性。
 
-请不要把真实生成的完整链接发到 Issue、截图、日志或公开仓库里。完整链接本身就是访问凭证。
+访问密码保护：主页面可设置全局访问密码，所有页面（生成页、查看页）均需登录。
 
-## 过期机制
+过期与撤销：支持无状态（仅客户端过期）、KV 和 D1 三种过期校验模式；KV/D1 模式下可服务端强制过期或撤销。
 
-本项目有两种过期模式。
+轻量部署：默认无需数据库，Worker 单文件即可运行。
 
-默认无数据库模式：
+🔐 安全模型
+/id.密文 中的 密文 是加密后的 Steam 令牌数据。
 
-- 不需要 KV、D1 或数据库。
-- 生成链接时，浏览器把 `expiresAt` 写进加密内容。
-- Worker 临时解密后检查 `expiresAt`，超过时间就拒绝返回验证码。
-- 这种模式能让原始链接到期失效，但懂技术的人如果已经拿到完整链接，理论上可以用同一密钥重新构造一份新的加密内容。
+#解密钥 是客户端随机生成的 AES‑GCM 密钥。浏览器请求页面时不会将 # 之后的内容发送给服务器。
 
-可选 KV 模式：
+查看验证码时，前端通过 POST /api/token 将 密文 和 解密钥 一起发送给 Worker。
 
-- 需要绑定 Cloudflare Workers KV，绑定名为 `LINK_KV`。
-- 生成链接时，Worker 在 KV 中保存 `id`、密文哈希和过期时间。
-- 查看验证码时，Worker 必须先通过 KV 校验。
-- 到期、记录不存在、密文哈希不匹配都会拒绝解析。
-- KV 不保存 Steam 密钥，也不保存解密钥。
-- 这种模式适合轻量部署。
+Worker 在请求期间临时解密，生成当前 5 位 Steam Guard 验证码，并只返回验证码。Worker 不存储 Steam 密钥，也不返回明文密钥。
 
-可选 D1 数据库模式：
+如果配置了 LINK_SECRET，服务端会在客户端密文外层再进行一次 AES‑GCM 加密，服务端解封后才能得到客户端密文，而客户端密钥仍在 # 片段中。
 
-- 需要绑定 Cloudflare D1，绑定名为 `LINK_DB`。
-- 生成链接时，Worker 在 D1 中保存 `id`、密文哈希、过期时间和创建时间。
-- 查看验证码时，Worker 必须先通过 D1 校验。
-- 到期、记录不存在、密文哈希不匹配都会拒绝解析。
-- D1 不保存 Steam 密钥，也不保存解密钥。
-- 这种模式更适合后续扩展管理、审计、撤销等功能。
+链接过期时间可设置在加密数据中（无状态模式）或由服务端存储（KV/D1）强制检查。
 
-如果同时绑定 KV 和 D1，Worker 会优先使用 D1。
+链接密码的哈希值存储在 KV 或 D1 中，不包含 Steam 密钥。
 
-## 适用场景
+拿到完整链接（含 # 密钥）且知道链接密码的人才能看到验证码；仅获得 密文 部分无法生成验证码。
 
-这个工具更适合在完全可信任的小范围内，临时共享 Steam Guard 验证码访问能力，而不是公开分发或面向陌生人使用。
+警告：完整链接本身就是访问凭证，请勿将其公开在 Issue、日志、截图或聊天记录中。
 
-例如：
+⏱ 过期机制
+生成链接时可以指定有效期（分钟），覆盖全局默认设置。
 
-- 你和朋友共同维护一个测试用 Steam 账号
-- 需要让可信任的人临时帮忙登录、排查、配置或维护账号
-- 不想直接把 Steam Guard 原始密钥发给对方
-- 希望分享链接可以设置过期时间，到期自动失效
+无状态模式（无 KV/D1）：过期时间加密在 payload 内，Worker 解密后检查 expiresAt。
 
-这个项目的目标不是鼓励随意共享账号，而是在自托管、熟人协作、小团队使用的场景里，提供一个比“直接发送原始密钥”更克制的方案。
+KV 模式：过期时间、密文哈希、密码哈希存储在 Cloudflare KV 中，到期自动删除。
 
-## 为什么不用直接发密钥
+D1 模式：结构与 KV 类似，适合需要查询、审计、批量撤销的场景。
 
-直接发送 Steam Guard 原始密钥风险很高。一旦泄露，对方可能长期生成验证码。
+若同时绑定 KV 和 D1，优先使用 D1。
 
-这个工具的思路是：
+📦 环境变量
+所有变量为可选，无需设置即可运行基础功能。
 
-- 部署者不必把 Steam Guard 原始密钥存到固定后端机密里
-- 使用者生成一个带有效期的分享链接
-- 访问者只能通过链接获取当前验证码
-- Worker 只在请求期间临时解密并返回验证码
-- 可以结合 KV 或 D1 做更强的服务端过期和校验
+变量名	说明	默认值
+ACCESS_PASSWORD	访问主页面所需密码	无（无需密码）
+SESSION_SECRET	会话 Cookie 签名密钥	回退至 ACCESS_PASSWORD
+BACKGROUND_IMAGE_URL	页面背景图片链接	无
+LINK_TTL_MINUTES	全局默认链接有效期（分钟），0 表示永久	30
+LINK_SECRET / SERVER_SECRET	服务端二次加密密钥	无（不启用）
+REQUIRE_LINK_SECRET	强制所有链接使用服务端加密（true/1/yes/on）	false
+D1 绑定：LINK_DB	用于存储链接元数据的 D1 数据库	无
+KV 绑定：LINK_KV 或 LINK_STORE	用于存储链接元数据的 KV 命名空间	无
+注意：链接密码功能必须配置 KV 或 D1 存储；无存储时密码将被忽略。
 
-这样做不能消除所有风险，但通常比直接把原始密钥发给别人要更克制一些。
+🚀 部署
+Cloudflare Workers（推荐）
+登录 Cloudflare Dashboard。
 
-## 免责声明
+进入 Workers & Pages → 创建应用程序 → 创建 Worker。
 
-本项目是一个自托管的 Steam Guard 验证码辅助工具，仅供个人学习、研究和自用场景使用。
+将 worker.js 的全部代码粘贴到编辑器中。
 
-使用者应自行确认自己有权使用相关 Steam Guard 密钥，并自行承担因部署、分享、泄露链接、配置错误、服务器被入侵、浏览器环境不安全、第三方访问完整分享链接等原因造成的账号风险、财产损失或其他后果。
+（可选）设置环境变量或绑定 KV/D1。
 
-项目作者和部署者不保存、索取或主动收集任何 Steam 账号密码，但完整分享链接可以用于获取验证码。任何人拿到完整分享链接，都可能在有效期内查看验证码。请不要把真实链接分享给不可信的人，也不要把真实链接提交到 GitHub、Issue、日志、截图、论坛或聊天记录中。
+点击 部署。
 
-本项目与 Valve、Steam 无关联，也不是 Steam 官方产品。使用本项目即表示你理解并接受上述风险。
-
-## 文件说明
-
-- `worker.js`：完整的 Cloudflare Worker 单文件版本，可以直接复制到 Workers 控制台。
-- `wrangler.toml`：Wrangler 部署配置。
-- `.dev.vars.example`：本地开发环境变量示例。
-- `test/worker.test.js`：基础测试。
-
-## 环境变量
-
-全部都是可选项。
-
-设置访问密码后，打开创建页面或分享页面都需要先登录。不设置则没有密码：
-
-```text
-ACCESS_PASSWORD=你的访问密码
-```
-
-用于签名登录 Cookie。不设置时会使用 `ACCESS_PASSWORD` 作为回退：
-
-```text
-SESSION_SECRET=另一串很长的随机字符
-```
-
-设置页面背景图链接：
-
-```text
-BACKGROUND_IMAGE_URL=https://example.com/background.jpg
-```
-
-设置链接有效期，单位分钟。默认 30，设置为 0 表示永久：
-
-```text
-LINK_TTL_MINUTES=30
-```
-
-可选 D1 数据库绑定：
-
-```text
-LINK_DB
-```
-
-可选 KV 绑定：
-
-```text
-LINK_KV
-```
-
-## 本地部署
-
-要求：
-
-- Node.js 18 或更新版本。
-- npm。
-- 第一次 `npm install` 需要联网。
-
-步骤：
-
-```bash
-cd steam-guard-link-worker
-npm install
-copy .dev.vars.example .dev.vars
-npm run dev
-```
-
-Linux 或 macOS 用：
-
-```bash
-cp .dev.vars.example .dev.vars
-```
-
-如果不需要密码和背景图，`.dev.vars` 可以保持空值。
-
-如果本地想生成永久链接，可以把 `.dev.vars` 里的有效期设为永久：
-
-```text
-LINK_TTL_MINUTES="0"
-```
-
-启动后 Wrangler 通常会输出：
-
-```text
-http://127.0.0.1:8787
-```
-
-打开这个地址，粘贴 Steam Guard 密钥或 `otpauth://` 链接，即可生成分享链接。
-
-本地 KV 模式可以使用 Wrangler 的本地 KV。先创建 KV namespace 并把绑定写入 `wrangler.toml`，绑定名必须是 `LINK_KV`：
-
-```bash
-npx wrangler kv namespace create LINK_KV
-```
-
-`wrangler.toml` 示例：
-
-```toml
-[[kv_namespaces]]
-binding = "LINK_KV"
-id = "你的 kv namespace id"
-```
-
-本地 D1 模式可以使用 Wrangler 的本地 D1。先创建数据库并把绑定写入 `wrangler.toml`，绑定名必须是 `LINK_DB`：
-
-```bash
-npx wrangler d1 create steam-guard-link-worker
-```
-
-`wrangler.toml` 示例：
-
-```toml
-[[d1_databases]]
-binding = "LINK_DB"
-database_name = "steam-guard-link-worker"
-database_id = "你的 database_id"
-```
-
-## Cloudflare Workers 部署
-
-方式一：Wrangler 部署。
-
-```bash
+通过 Wrangler 部署
+bash
 npm install
 npx wrangler deploy
-```
+需要 KV 或 D1 时请按文档在 wrangler.toml 中绑定。
 
-如果要启用 D1 数据库模式：
+D1 数据库初始化
+若使用 D1 且需要链接密码功能，请确保表包含 password_hash 字段。新版 Worker 会自动创建带该字段的表；若已有旧表，请手动执行：
 
-```bash
-npx wrangler d1 create steam-guard-link-worker
-```
+sql
+ALTER TABLE links ADD COLUMN password_hash TEXT DEFAULT NULL;
+🧩 使用方式
+生成分享链接
+打开主页面（如果设置了 ACCESS_PASSWORD 需先登录）。
 
-然后把输出的 `database_id` 填进 `wrangler.toml`：
+（可选）填写显示名称。
 
-```toml
-[[d1_databases]]
-binding = "LINK_DB"
-database_name = "steam-guard-link-worker"
-database_id = "你的 database_id"
-```
+在文本区粘贴 Steam 令牌信息，支持：
 
-表结构会由 Worker 自动创建：
-
-```sql
-CREATE TABLE IF NOT EXISTS links (
-  id TEXT PRIMARY KEY,
-  payload_hash TEXT NOT NULL,
-  expires_at INTEGER,
-  created_at INTEGER NOT NULL
-);
-```
-
-如果要启用 KV 模式：
-
-```bash
-npx wrangler kv namespace create LINK_KV
-```
-
-然后把输出的 `id` 填进 `wrangler.toml`：
-
-```toml
-[[kv_namespaces]]
-binding = "LINK_KV"
-id = "你的 kv namespace id"
-```
-
-如果要设置访问密码：
-
-```bash
-npx wrangler secret put ACCESS_PASSWORD
-npx wrangler secret put SESSION_SECRET
-```
-
-如果要设置背景图片：
-
-```bash
-npx wrangler secret put BACKGROUND_IMAGE_URL
-```
-
-如果要永久链接：
-
-```bash
-npx wrangler secret put LINK_TTL_MINUTES
-```
-
-填入：
-
-```text
-0
-```
-
-方式二：Cloudflare 控制台。
-
-1. 新建 Worker。
-2. 把 `worker.js` 全文复制进去。
-3. 不需要任何必填密钥。
-4. 如需 KV 模式，在 Cloudflare 控制台创建 KV 并绑定到 Worker，绑定名为 `LINK_KV`。
-5. 如需 D1 模式，在 Cloudflare 控制台创建 D1 并绑定到 Worker，绑定名为 `LINK_DB`。
-6. 需要密码就添加 `ACCESS_PASSWORD` 和 `SESSION_SECRET`。
-7. 需要背景图就添加 `BACKGROUND_IMAGE_URL`。
-8. 需要永久链接就添加 `LINK_TTL_MINUTES=0`。
-9. 部署。
-
-## 使用方式
-
-首页支持粘贴这些格式：
-
-```text
 otpauth://totp/Steam:account?secret=BASE32_SECRET&issuer=Steam
-```
 
-maFile JSON：
+maFile JSON（含 shared_secret）
 
-```json
-{
-  "account_name": "main",
-  "shared_secret": "BASE64_SHARED_SECRET"
-}
-```
+纯 Base64 shared_secret 或 Base32 密钥
 
-也可以直接粘贴原始 Base64 `shared_secret` 或 Base32 secret。
+（可选）设置有效期（留空使用全局默认）。
 
-生成后会得到一个类似：
+（可选）输入链接密码（需已配置 KV 或 D1）。
 
-```text
-https://你的域名/id.密文#解密钥
-```
+点击 生成链接。
 
-访问这个完整链接即可查看自动刷新的 Steam Guard 5 位验证码。浏览器端不会显示或保存明文 Steam 密钥。
+复制生成的完整链接（或扫描二维码）分享给需要的人。
 
-## 测试
+查看动态验证码
+在浏览器中打开分享链接。
 
-```bash
-npm test
-```
+若链接设置了密码，页面会弹出输入框，输入正确密码后显示验证码。
+
+验证码每 30 秒自动刷新，点击“复制”可将当前码复制到剪贴板。
+
+🛠 本地开发
+bash
+npm install
+cp .dev.vars.example .dev.vars
+npm run dev
+启动后访问 http://127.0.0.1:8787。
+
+⚠️ 免责声明
+本项目仅为个人学习、研究及自用设计，不鼓励账号共享。使用者应确保有权管理相关 Steam 令牌，并自行承担因部署、分享、泄露或配置错误导致的一切风险。项目作者不保存、不收集任何 Steam 账户信息。完整分享链接可被用于查看验证码，切勿泄露给不可信方。本项目与 Valve、Steam 无任何关联。
