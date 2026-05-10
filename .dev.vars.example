@@ -1,18 +1,25 @@
-# Copy to .dev.vars for local wrangler dev.
-# Never commit real secrets.
-#
-# Optional. If set, visitors must log in before opening the app.
-ACCESS_PASSWORD=""
-SESSION_SECRET=""
+# ========================
+# Steam Guard Link Worker
+# 本地开发环境变量示例
+# ========================
 
-# Optional. Default is 30. Set to 0 for permanent links.
-LINK_TTL_MINUTES="30"
+# 访问密码，留空则不启用密码保护
+ACCESS_PASSWORD=
 
-# Optional D1 binding for stronger server-side expiry/revocation.
-# Configure in wrangler.toml or Cloudflare dashboard as binding name LINK_DB.
-#
-# Optional KV binding for lightweight server-side expiry/revocation.
-# Configure in wrangler.toml or Cloudflare dashboard as binding name LINK_KV.
+# 会话签名密钥，留空则回退使用 ACCESS_PASSWORD
+SESSION_SECRET=
 
-# Optional. If empty, the app uses the default pink background.
-BACKGROUND_IMAGE_URL=""
+# 页面背景图片 URL，留空则不使用背景图
+BACKGROUND_IMAGE_URL=
+
+# 全局默认链接有效期（分钟），设为 0 表示永久，默认 30
+LINK_TTL_MINUTES=30
+
+# 服务端二次加密密钥，留空则不启用
+LINK_SECRET=
+
+# 是否强制所有链接必须使用服务端加密（true/1/yes/on）
+REQUIRE_LINK_SECRET=
+
+# 本地 KV 绑定名称（需在 wrangler.toml 中配置，例如 LINK_KV）
+# 本地 D1 绑定名称（需在 wrangler.toml 中配置，例如 LINK_DB）
