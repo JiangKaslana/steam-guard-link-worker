@@ -1,14 +1,15 @@
 {
   "name": "steam-guard-link-worker",
   "version": "1.0.0",
-  "private": false,
-  "type": "module",
+  "description": "Steam Guard sharing link generator on Cloudflare Workers",
+  "main": "worker.js",
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "test": "node test/worker.test.js"
+    "test": "vitest run"
   },
   "devDependencies": {
-    "wrangler": "^4.0.0"
+    "wrangler": "^3.0.0",
+    "vitest": "^1.0.0"
   }
 }
