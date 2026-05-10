@@ -1,20 +1,35 @@
 name = "steam-guard-link-worker"
 main = "worker.js"
-compatibility_date = "2026-05-03"
-workers_dev = true
+compatibility_date = "2025-05-10"
 
-[observability]
-enabled = true
+# ========================
+# 环境变量（可选）
+# ========================
+[vars]
+# 全局默认链接有效期（分钟），0 表示永久
+LINK_TTL_MINUTES = "30"
 
-# Optional D1 database mode. It stores only link id, payload hash, and expiry time.
-# Create with: npx wrangler d1 create steam-guard-link-worker
-# [[d1_databases]]
-# binding = "LINK_DB"
-# database_name = "steam-guard-link-worker"
-# database_id = "replace-with-your-d1-database-id"
+# 是否强制使用服务端二次加密（true/false）
+REQUIRE_LINK_SECRET = "false"
 
-# Optional KV mode. It stores only link id, payload hash, and expiry time.
-# Create with: npx wrangler kv namespace create LINK_KV
+# 如果需要日常访问密码，推荐使用 wrangler secret put 设置
+# ACCESS_PASSWORD
+# SESSION_SECRET
+# LINK_SECRET
+
+# ========================
+# KV 命名空间绑定（可选）
+# ========================
+# 取消注释并填入你的 KV namespace ID
 # [[kv_namespaces]]
 # binding = "LINK_KV"
-# id = "replace-with-your-kv-namespace-id"
+# id = "your-kv-namespace-id"
+
+# ========================
+# D1 数据库绑定（可选）
+# ========================
+# 取消注释并填入你的 D1 database ID
+# [[d1_databases]]
+# binding = "LINK_DB"
+# database_name = "steam-guard-link-db"
+# database_id = "your-database-id"
